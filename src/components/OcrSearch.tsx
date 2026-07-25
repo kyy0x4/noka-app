@@ -1,7 +1,54 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Search, FileText, Loader2 } from 'lucide-react';
 import { searchNoka, listDocuments } from '../utils/ocrApi';
+import { supabase } from '../utils/supabase';
 import { OcrDocument, OcrSearchResult } from '../types/noka';
+
+function normalize(text: string): string {
+  return text.toUpperCase().replace(/[O]/g, '0').replace(/[I]/g, '1').replace(/[B]/g, '8');
+}
+
+async function searchViaSupabase(query: string, threshold: number, docId?: string): Promise<OcrSearchResult[]> {
+  if (!supabase) return [];
+  const q = normalize(query);
+
+  let dbQuery = supabase
+    .from('ocr_words')
+    .select('id, doc_id, page_num, word, word_normalized, confidence, x, y, w, h')
+    .ilike('word_normalized', `%${q}%`)
+    .limit(200);
+
+  if (docId) dbQuery = dbQuery.eq('doc_id', docId);
+  const { data, error } = await dbQuery;
+  if (error || !data) return [];
+
+  const results: OcrSearchResult[] = [];
+  for (const row of data) {
+    const wn = normalize(row.word);
+    let score = 0;
+    if (q.length <= 3) {
+      score = wn.includes(q) ? 100 : (wn.startsWith(q) ? 80 : 0);
+    } else {
+      let matches = 0;
+      for (let i = 0; i <= q.length - 3; i++) {
+        if (wn.includes(q.substring(i, i + 3))) matches++;
+      }
+      score = Math.round((matches / Math.max(1, q.length - 2)) * 100);
+    }
+    if (score >= threshold) {
+      results.push({
+        id: row.id,
+        doc_id: row.doc_id,
+        page: row.page_num,
+        found_text: row.word,
+        match_score: score,
+        ocr_confidence: row.confidence,
+        location: { x: row.x, y: row.y, w: row.w, h: row.h },
+      });
+    }
+  }
+  return results.sort((a, b) => b.match_score - a.match_score).slice(0, 50);
+}
 
 export const OcrSearch = () => {
   const [query, setQuery] = useState('');
@@ -14,25 +61,39 @@ export const OcrSearch = () => {
   const [searched, setSearched] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    listDocuments().then((d) => setDocuments(d.documents || [])).catch(() => {});
-  }, []);
+  const useBackend = !!import.meta.env.VITE_OCR_API_URL;
 
-  const handleSearch = async () => {
+  useEffect(() => {
+    if (useBackend) {
+      listDocuments().then((d) => setDocuments(d.documents || [])).catch(() => {});
+    } else if (supabase) {
+      supabase.from('ocr_documents').select('*').eq('status', 'completed').order('created_at', { ascending: false }).limit(50).then(({ data }) => {
+        if (data) setDocuments(data as OcrDocument[]);
+      });
+    }
+  }, [useBackend]);
+
+  const handleSearch = useCallback(async () => {
     if (!query.trim()) return;
     setLoading(true);
     setSearched(true);
     try {
-      const data = await searchNoka(query.trim(), selectedDoc || undefined, threshold);
-      setResults(data.results);
-      setTotal(data.total);
+      let data: OcrSearchResult[];
+      if (useBackend) {
+        const resp = await searchNoka(query.trim(), selectedDoc || undefined, threshold);
+        data = resp.results;
+      } else {
+        data = await searchViaSupabase(query.trim(), threshold, selectedDoc || undefined);
+      }
+      setResults(data);
+      setTotal(data.length);
     } catch {
       setResults([]);
       setTotal(0);
     } finally {
       setLoading(false);
     }
-  };
+  }, [query, threshold, selectedDoc, useBackend]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') handleSearch();
@@ -72,10 +133,7 @@ export const OcrSearch = () => {
           <div className="flex items-center gap-2">
             <label className="text-xs text-slate-400 shrink-0">Threshold:</label>
             <input
-              type="range"
-              min={1}
-              max={100}
-              value={threshold}
+              type="range" min={1} max={100} value={threshold}
               onChange={(e) => setThreshold(Number(e.target.value))}
               className="w-20"
             />
@@ -108,21 +166,12 @@ export const OcrSearch = () => {
           ) : (
             <div className="space-y-2 max-h-[500px] overflow-y-auto">
               {results.map((r) => (
-                <div
-                  key={r.id}
-                  className="p-3 rounded-lg bg-slate-50 dark:bg-[#0c1427] border border-slate-100 dark:border-[#1a2235]"
-                >
+                <div key={r.id} className="p-3 rounded-lg bg-slate-50 dark:bg-[#0c1427] border border-slate-100 dark:border-[#1a2235]">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <span className="text-lg font-mono font-bold text-blue-600 dark:text-blue-400">
-                        {r.found_text}
-                      </span>
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400">
-                        Match: {r.match_score}%
-                      </span>
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                        OCR: {r.ocr_confidence}%
-                      </span>
+                      <span className="text-lg font-mono font-bold text-blue-600 dark:text-blue-400">{r.found_text}</span>
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400">Match: {r.match_score}%</span>
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400">OCR: {r.ocr_confidence}%</span>
                     </div>
                     <span className="text-xs text-slate-400">Page {r.page}</span>
                   </div>
