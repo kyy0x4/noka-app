@@ -1,6 +1,6 @@
 export type SearchMode = 'exact' | 'fuzzy' | 'batch';
 export type RecordStatus = 'ACTIVE' | 'ARCHIVED' | 'FLAGGED' | 'PENDING';
-export type ActiveTab = 'lookup' | 'ingest' | 'logs' | 'persistence' | 'analytics' | 'ocr-upload' | 'ocr-search';
+export type ActiveTab = 'ocr-upload' | 'ocr-search';
 
 export interface OcrDocument {
   id: string;
