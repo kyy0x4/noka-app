@@ -1,0 +1,6 @@
+{
+  "name": "NOKA Processing & Database Search Engine",
+  "description": "High-density data pipeline, log indexer, and vehicle NOKA database search engine with dark mode and component-based structure.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
