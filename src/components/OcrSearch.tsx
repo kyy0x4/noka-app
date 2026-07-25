@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Search, FileText, Loader2, Database, AlertCircle } from 'lucide-react';
+import { Search, FileText, Loader2, Database } from 'lucide-react';
 import { searchNoka, listDocuments } from '../utils/ocrApi';
 import { supabase } from '../utils/supabase';
 import { OcrDocument, OcrSearchResult } from '../types/noka';
@@ -66,21 +66,8 @@ export const OcrSearch: React.FC<OcrSearchProps> = ({ inputRef }) => {
   const [loading, setLoading] = useState(false);
   const [documents, setDocuments] = useState<OcrDocument[]>([]);
   const [searched, setSearched] = useState(false);
-  const [dbConnected, setDbConnected] = useState<boolean | null>(null);
 
   const useBackend = !!import.meta.env.VITE_OCR_API_URL;
-
-  useEffect(() => {
-    const check = async () => {
-      if (supabase) {
-        const { data } = await supabase.from('ocr_documents').select('count', { count: 'exact', head: true });
-        setDbConnected(data !== null);
-      } else {
-        setDbConnected(false);
-      }
-    };
-    check();
-  }, []);
 
   useEffect(() => {
     const load = async () => {
@@ -124,8 +111,7 @@ export const OcrSearch: React.FC<OcrSearchProps> = ({ inputRef }) => {
             <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">NOKA OCR Search</h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">Cari nomor rangka dari hasil OCR scan surat jalan.</p>
           </div>
-          {dbConnected === true && <span className="flex items-center gap-1.5 text-[10px] text-emerald-500"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Supabase Connected</span>}
-          {dbConnected === false && <span className="flex items-center gap-1.5 text-[10px] text-red-400"><AlertCircle className="w-3 h-3" /> Supabase not configured</span>}
+          {supabase && <span className="flex items-center gap-1.5 text-[10px] text-emerald-500"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Supabase Connected</span>}
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3">
@@ -163,13 +149,6 @@ export const OcrSearch: React.FC<OcrSearchProps> = ({ inputRef }) => {
           </button>
         </div>
       </div>
-
-      {!dbConnected && !useBackend && (
-        <div className="p-6 rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/10 text-center">
-          <AlertCircle className="w-6 h-6 text-amber-500 mx-auto mb-2" />
-          <p className="text-xs text-amber-700 dark:text-amber-400">Supabase not configured. Set <code className="text-xs bg-amber-100 dark:bg-amber-900 px-1 rounded">VITE_SUPABASE_URL</code> and <code className="text-xs bg-amber-100 dark:bg-amber-900 px-1 rounded">VITE_SUPABASE_ANON_KEY</code> in Vercel env vars.</p>
-        </div>
-      )}
 
       {searched && (
         <div className="p-6 rounded-2xl border border-slate-200 dark:border-[#222a3d] bg-white dark:bg-[#131b2e] shadow-sm">
